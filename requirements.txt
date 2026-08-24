@@ -1,5 +1,4 @@
-flask
-flask-cors
-firebase-admin
+fastapi
+uvicorn
+requests
 yt-dlp
-gunicorn
