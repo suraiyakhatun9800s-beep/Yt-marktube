@@ -1,5 +1,7 @@
-fastapi
-uvicorn
-gunicorn
-requests
+Flask
+flask-cors
+firebase-admin
 yt-dlp
+requests[socks]
+PySocks
+gunicorn
