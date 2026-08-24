@@ -19,7 +19,7 @@ def get_archive_proxy():
         res = requests.get(api_url, headers=headers, timeout=5)
         if res.status_code == 200:
             return res.json().get("data", {}).get("proxyList", [])
-    except:
+    except Exception:
         pass
     return []
 
@@ -27,8 +27,8 @@ def get_archive_proxy():
 @app.get("/")
 def home():
     return {
-        "message": "Render Direct URL Extractor is Live!",
-        "usage": "/extract?url=YOUR_VIDEO_URL",
+        "status": "online",
+        "message": "Direct Stream URL Extractor is running!",
     }
 
 
@@ -36,8 +36,8 @@ def home():
 def extract_direct_url(url: str):
     proxies = get_archive_proxy()
 
-    # আর্কাইভ প্রক্সিগুলো ট্রাই করবে
-    for proxy in proxies[:15]:
+    # ১. প্রথমে Checkerproxy Archive-এর প্রথম ১০টি প্রক্সি চেক করবে
+    for proxy in proxies[:10]:
         proxy_addr = f"http://{proxy}"
         ydl_opts = {
             "format": "best",
@@ -45,32 +45,40 @@ def extract_direct_url(url: str):
             "quiet": True,
             "skip_download": True,
             "socket_timeout": 5,
+            "nocheckcertificate": True,
         }
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
-                return {
-                    "status": "success",
-                    "title": info.get("title"),
-                    "direct_url": info.get("url"),
-                    "used_proxy": proxy,
-                }
+                if info and "url" in info:
+                    return {
+                        "status": "success",
+                        "title": info.get("title"),
+                        "direct_url": info.get("url"),
+                        "used_proxy": proxy,
+                    }
         except Exception:
             continue
 
-    # প্রক্সি ফেইল করলে ডাইরেক্ট ট্রাই করবে
+    # ২. প্রক্সিগুলো কাজ না করলে সরাসরি (Direct Connection) চেষ্টা করবে
     try:
-        ydl_opts = {"format": "best", "quiet": True, "skip_download": True}
+        ydl_opts = {
+            "format": "best",
+            "quiet": True,
+            "skip_download": True,
+            "nocheckcertificate": True,
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             return {
                 "status": "success",
                 "title": info.get("title"),
                 "direct_url": info.get("url"),
-                "used_proxy": "Direct Connection",
+                "used_proxy": "Direct Connection (No Proxy)",
             }
     except Exception as e:
+        # ৫০০ এরর না দিয়ে আসল এরর মেসেজ দেখাবে
         raise HTTPException(
-            status_code=500, detail=f"Failed to extract URL: {str(e)}"
+            status_code=400, detail=f"yt-dlp Extraction Error: {str(e)}"
         )
