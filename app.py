@@ -1,6 +1,6 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from supabase import Client, create_client
@@ -17,16 +17,15 @@ API_KEY = "YT_SECURE_API_V1_2026_PRO"
 SUPABASE_URL = "https://xzwbejlxdjixndvrwvey.supabase.co"
 SUPABASE_KEY = "sb_publishable_UXzBvtY5Javvg5DwaS1l6g_OUC18jr5"
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-# ======================
-# POWER LOGIC
-# ======================
+# Supabase Client initialisation with timeout check
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    print(f"Supabase Init Error: {e}")
 
 
 def mark_as_dead(proxy_ip):
-    """কানেকশন আউট বা ব্যান্ডউইথ শেষ হলে প্রক্সির স্ট্যাটাস live থেকে dead করে দেওয়া হয়"""
+    """কানেকশন আউট হলে প্রক্সির স্ট্যাটাস live থেকে dead করা হয়"""
     try:
         supabase.table("proxies").update({"status": "dead"}).eq(
             "ip", proxy_ip
@@ -36,31 +35,41 @@ def mark_as_dead(proxy_ip):
 
 
 def call_yt_engine(url, proxy):
-    """প্রতিটি প্রক্সির জন্য আলাদা থ্রেড ইঞ্জিন"""
+    """Render 502 Timeout প্রতিরোধে নিরাপদ yt_dlp ইঞ্জিন"""
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "proxy": proxy,
-        "socket_timeout": 12,  # স্লো প্রক্সির জন্য ১২ সেকেন্ড বাফার
+        "socket_timeout": 8,  # টাইমআউট কমাবো যাতে রিকুয়েস্ট দ্রুত রেসপন্স করে
         "nocheckcertificate": True,
         "format": "best",
         "noplaylist": True,
         "extract_flat": False,
+        "ignoreerrors": True,
     }
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Safe extraction to prevent process crash
             info = ydl.extract_info(url, download=False)
-            original_url = info.get("url")
-            if original_url:
-                return {
-                    "success": True,
-                    "playback": original_url,
-                    "title": info.get("title"),
-                }
+            if info:
+                # Direct URL fallback
+                playback_url = info.get("url")
+                if not playback_url and "formats" in info:
+                    for f in info["formats"]:
+                        if f.get("url"):
+                            playback_url = f["url"]
+                            break
+
+                if playback_url:
+                    return {
+                        "success": True,
+                        "playback": playback_url,
+                        "title": info.get("title", "Video"),
+                    }
     except Exception as e:
         err = str(e).lower()
-        # Connection Out এর সব কন্ডিশন
         if any(
             msg in err
             for msg in [
@@ -71,15 +80,12 @@ def call_yt_engine(url, proxy):
                 "failed",
                 "aborted",
                 "established",
+                "connection",
             ]
         ):
             mark_as_dead(proxy)
+
     return {"success": False}
-
-
-# ======================
-# HIGH-CONCURRENCY ROUTES
-# ======================
 
 
 @app.route("/")
@@ -97,15 +103,15 @@ def get_link():
     if not url:
         return jsonify({"success": False, "error": "URL is missing"}), 400
 
-    # Supabase থেকে কেবল 'live' স্ট্যাটাসের প্রক্সিগুলো সংগ্রহ করা
     try:
+        # Live Proxies Fetching
         response = (
             supabase.table("proxies")
             .select("ip")
             .eq("status", "live")
             .execute()
         )
-        proxy_records = response.data
+        proxy_records = response.data if response else []
     except Exception as e:
         return (
             jsonify(
@@ -123,21 +129,27 @@ def get_link():
     proxy_list = [p["ip"] for p in proxy_records if "ip" in p]
     random.shuffle(proxy_list)
 
-    # রেস কন্ডিশন মেথড: ৫টি প্রক্সি একসাথে কাজ শুরু করবে
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    # Render RAM সেভ করতে max_workers=3 রাখা হলো (RAM Overflow প্রতিরোধে)
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(call_yt_engine, url, p): p
-            for p in proxy_list[:5]
+            for p in proxy_list[:3]
         }
 
         for future in as_completed(futures):
-            result = future.result()
-            if result.get("success"):
-                return jsonify(result)
+            try:
+                result = future.result()
+                if result and result.get("success"):
+                    return jsonify(result)
+            except Exception:
+                continue
 
     return (
         jsonify(
-            {"success": False, "error": "Connection Out or Proxy Limit Reached"}
+            {
+                "success": False,
+                "error": "Connection Out or Proxies Failed to Extract Link",
+            }
         ),
         500,
     )
