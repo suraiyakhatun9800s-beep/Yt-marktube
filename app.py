@@ -1,5 +1,4 @@
 import os
-import random
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
@@ -7,12 +6,8 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)
 
-# আপনার প্রদত্ত প্রক্সি পুল
-PROXIES_LIST = [
-    
-    "http://DVSoushlwv:pYFLHug@172.93.103.121:45727"
-    
-]
+# সাম্প্রতিক কাজের প্রক্সি (ডিফল্ট)
+DEFAULT_PROXY = "http://DVSoushlwv:pYFLHug@172.93.103.121:45727"
 
 def parse_proxy_string(proxy_str):
     if not proxy_str:
@@ -35,62 +30,11 @@ def parse_proxy_string(proxy_str):
         
     return f"{protocol}://{proxy_str}"
 
-def extract_media_info(url, proxy_url=None):
-    # যেকোনো প্ল্যাটফর্মের জন্য ইউনিভার্সাল অপশন
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'noplaylist': True,
-        'socket_timeout': 6,
-        'skip_download': True,
-        # যেকোনো মিডিয়া সাইটের জন্য ফ্লেক্সিবল ফরম্যাট সিলেক্টর
-        'format': 'bestvideo+bestaudio/best/b',
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        }
-    }
-    
-    if proxy_url:
-        ydl_opts['proxy'] = proxy_url
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        
-        # মেইন স্ট্রিম ডাইরেক্ট লিঙ্ক
-        stream_url = info.get('url')
-        
-        formats_data = []
-        if 'formats' in info:
-            for f in info['formats']:
-                u = f.get('url')
-                if u:
-                    formats_data.append({
-                        'format_id': f.get('format_id'),
-                        'ext': f.get('ext'),
-                        'resolution': f.get('resolution') or f.get('format_note'),
-                        'vcodec': f.get('vcodec'),
-                        'acodec': f.get('acodec'),
-                        'url': u
-                    })
-            if not stream_url and formats_data:
-                stream_url = formats_data[-1]['url']
-
-        return {
-            "success": True,
-            "site": info.get('extractor_key') or info.get('extractor'),
-            "title": info.get('title'),
-            "duration": info.get('duration'),
-            "thumbnail": info.get('thumbnail'),
-            "stream_url": stream_url,
-            "proxy_used": proxy_url if proxy_url else "Direct Connection",
-            "all_formats": formats_data
-        }
-
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({
         "status": "online",
-        "message": "Universal Multi-Media Extractor API is active!"
+        "message": "Ultra-light Stream Extractor API is Running"
     }), 200
 
 @app.route('/extract', methods=['GET', 'POST'])
@@ -108,36 +52,44 @@ def extract():
             custom_proxy = request.args.get('proxy')
 
         if not url:
+            return jsonify({"success": False, "error": "URL parameter is missing"}), 400
+
+        active_proxy = parse_proxy_string(custom_proxy) if custom_proxy else parse_proxy_string(DEFAULT_PROXY)
+
+        # মিনিমাল এবং ফাস্ট অপটিমাইজেশন সেটিংস
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+            'skip_download': True,
+            'socket_timeout': 8,
+            # অডিও+ভিডিও একসাথে মার্জ করা সিঙ্গেল ডিফল্ট ফাইল (Format 18/22)
+            'format': '18/22/b[acodec!=none][vcodec!=none]/best',
+            'proxy': active_proxy,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36',
+            }
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            # সরাসরি প্লে-এবল অরিজিনাল সিঙ্গেল স্ট্রিম লিংক
+            stream_url = info.get('url')
+
+            # অতি সংক্ষিপ্ত ও ক্লিন JSON রেসপন্স (CPU/RAM বাঁচানোর জন্য)
             return jsonify({
-                "success": False,
-                "error": "URL missing! Pass url parameter: /extract?url=YOUR_VIDEO_URL"
-            }), 400
+                "success": True,
+                "title": info.get('title'),
+                "thumbnail": info.get('thumbnail'),
+                "duration": info.get('duration'),
+                "stream_url": stream_url
+            }), 200
 
-        # প্রক্সি সিলেকশন logic
-        if custom_proxy:
-            active_proxy = parse_proxy_string(custom_proxy)
-        else:
-            active_proxy = parse_proxy_string(random.choice(PROXIES_LIST))
-
-        # ১ম চেষ্টা: প্রক্সি দিয়ে
-        try:
-            res = extract_media_info(url, active_proxy)
-            return jsonify(res), 200
-        except Exception as p_err:
-            # ২য় চেষ্টা: প্রক্সি টাইমআউট হলে ডাইরেক্ট সার্ভার IP দিয়ে (Auto-Fallback)
-            try:
-                res = extract_media_info(url, None)
-                return jsonify(res), 200
-            except Exception as d_err:
-                return jsonify({
-                    "success": False,
-                    "error": f"Proxy Error: {str(p_err)} | Direct Connection Error: {str(d_err)}"
-                }), 200
-
-    except Exception as global_err:
+    except Exception as e:
         return jsonify({
             "success": False,
-            "error": str(global_err)
+            "error": str(e)
         }), 200
 
 if __name__ == '__main__':
