@@ -7,7 +7,7 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)
 
-# আপনার প্রদান করা প্রক্সি লিস্ট (IP, Port, Username, Password)
+# আপনার প্রদত্ত প্রক্সি পুল
 PROXIES_LIST = [
     "http://bwadvamb:y06rok7kerdd@31.59.20.176:6754",
     "http://bwadvamb:y06rok7kerdd@45.38.107.97:6014",
@@ -42,15 +42,18 @@ def parse_proxy_string(proxy_str):
         
     return f"{protocol}://{proxy_str}"
 
-def extract_with_ytdlp(url, proxy_url):
+def extract_media_info(url, proxy_url=None):
+    # যেকোনো প্ল্যাটফর্মের জন্য ইউনিভার্সাল অপশন
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        'socket_timeout': 8, # দ্রুত প্রক্সি রেসপন্স পাওয়ার টাইমআউট
-        'format': '18/22/best[acodec!=none][vcodec!=none]/best',
+        'socket_timeout': 6,
+        'skip_download': True,
+        # যেকোনো মিডিয়া সাইটের জন্য ফ্লেক্সিবল ফরম্যাট সিলেক্টর
+        'format': 'bestvideo+bestaudio/best/b',
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
         }
     }
     
@@ -60,88 +63,88 @@ def extract_with_ytdlp(url, proxy_url):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         
+        # মেইন স্ট্রিম ডাইরেক্ট লিঙ্ক
         stream_url = info.get('url')
-        if not stream_url and 'formats' in info:
-            for f in info['formats']:
-                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                    stream_url = f.get('url')
-                    break
-
+        
         formats_data = []
         if 'formats' in info:
             for f in info['formats']:
-                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                u = f.get('url')
+                if u:
                     formats_data.append({
                         'format_id': f.get('format_id'),
                         'ext': f.get('ext'),
                         'resolution': f.get('resolution') or f.get('format_note'),
                         'vcodec': f.get('vcodec'),
                         'acodec': f.get('acodec'),
-                        'url': f.get('url')
+                        'url': u
                     })
+            if not stream_url and formats_data:
+                stream_url = formats_data[-1]['url']
 
         return {
             "success": True,
+            "site": info.get('extractor_key') or info.get('extractor'),
             "title": info.get('title'),
             "duration": info.get('duration'),
             "thumbnail": info.get('thumbnail'),
-            "raw_stream_url": stream_url,
+            "stream_url": stream_url,
             "proxy_used": proxy_url if proxy_url else "Direct Connection",
-            "all_combined_formats": formats_data
+            "all_formats": formats_data
         }
 
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({
         "status": "online",
-        "message": "yt-dlp Multi-Proxy Rotation API is Active!"
+        "message": "Universal Multi-Media Extractor API is active!"
     }), 200
 
 @app.route('/extract', methods=['GET', 'POST'])
-def extract_url():
-    url = None
-    custom_proxy = None
-
-    if request.method == 'POST':
-        data = request.get_json(silent=True) or {}
-        url = data.get('url')
-        custom_proxy = data.get('proxy')
-    else:
-        url = request.args.get('url')
-        custom_proxy = request.args.get('proxy')
-
-    if not url:
-        return jsonify({
-            "success": False, 
-            "error": "URL missing! Example: /extract?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        }), 400
-
-    # কাস্টম প্রক্সি থাকলে সেটি প্রাধান্য পাবে, নতুবা প্রক্সি পুল র্যান্ডমাইজ হবে
-    if custom_proxy:
-        proxies_to_try = [parse_proxy_string(custom_proxy)]
-    else:
-        proxies_to_try = list(PROXIES_LIST)
-        random.shuffle(proxies_to_try) # র‍্যান্ডম প্রক্সি রোটেশন
-
-    # প্রক্সিগুলোর মাধ্যমে পর্যায়ক্রমে ট্রাই করা (Proxy Fallback Loop)
-    errors = []
-    for proxy in proxies_to_try:
-        try:
-            res = extract_with_ytdlp(url, proxy)
-            return jsonify(res), 200
-        except Exception as e:
-            errors.append(f"Proxy ({proxy}) failed: {str(e)}")
-            continue
-
-    # সব প্রক্সি ফেল করলে শেষ চেষ্টা সার্ভারের নিজস্ব IP দিয়ে
+def extract():
     try:
-        res = extract_with_ytdlp(url, None)
-        return jsonify(res), 200
-    except Exception as e:
+        url = None
+        custom_proxy = None
+
+        if request.method == 'POST':
+            data = request.get_json(silent=True) or {}
+            url = data.get('url')
+            custom_proxy = data.get('proxy')
+        else:
+            url = request.args.get('url')
+            custom_proxy = request.args.get('proxy')
+
+        if not url:
+            return jsonify({
+                "success": False,
+                "error": "URL missing! Pass url parameter: /extract?url=YOUR_VIDEO_URL"
+            }), 400
+
+        # প্রক্সি সিলেকশন logic
+        if custom_proxy:
+            active_proxy = parse_proxy_string(custom_proxy)
+        else:
+            active_proxy = parse_proxy_string(random.choice(PROXIES_LIST))
+
+        # ১ম চেষ্টা: প্রক্সি দিয়ে
+        try:
+            res = extract_media_info(url, active_proxy)
+            return jsonify(res), 200
+        except Exception as p_err:
+            # ২য় চেষ্টা: প্রক্সি টাইমআউট হলে ডাইরেক্ট সার্ভার IP দিয়ে (Auto-Fallback)
+            try:
+                res = extract_media_info(url, None)
+                return jsonify(res), 200
+            except Exception as d_err:
+                return jsonify({
+                    "success": False,
+                    "error": f"Proxy Error: {str(p_err)} | Direct Connection Error: {str(d_err)}"
+                }), 200
+
+    except Exception as global_err:
         return jsonify({
             "success": False,
-            "error": "All proxy options failed.",
-            "details": errors
+            "error": str(global_err)
         }), 200
 
 if __name__ == '__main__':
