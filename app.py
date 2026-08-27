@@ -9,16 +9,9 @@ CORS(app)
 
 # আপনার প্রদত্ত প্রক্সি পুল
 PROXIES_LIST = [
-    "http://bwadvamb:y06rok7kerdd@31.59.20.176:6754",
-    "http://bwadvamb:y06rok7kerdd@45.38.107.97:6014",
-    "http://bwadvamb:y06rok7kerdd@198.105.121.200:6462",
-    "http://bwadvamb:y06rok7kerdd@64.137.96.74:6641",
-    "http://bwadvamb:y06rok7kerdd@198.23.243.226:6361",
-    "http://bwadvamb:y06rok7kerdd@38.154.185.97:6370",
-    "http://bwadvamb:y06rok7kerdd@84.247.60.125:6095",
-    "http://bwadvamb:y06rok7kerdd@142.111.67.146:5611",
-    "http://bwadvamb:y06rok7kerdd@191.96.254.138:6185",
-    "http://bwadvamb:y06rok7kerdd@31.58.9.4:6077"
+    
+    "https://bwadvamb:y06rok7kerdd@191.96.254.138:6185",
+    "https://bwadvamb:y06rok7kerdd@31.58.9.4:6077"
 ]
 
 def parse_proxy_string(proxy_str):
