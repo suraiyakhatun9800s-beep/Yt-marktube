@@ -6,6 +6,7 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)
 
+# Hardcoded Default Proxy
 DEFAULT_PROXY = "http://bwadvamb:y06rok7kerdd@31.59.20.176:6754"
 
 def parse_proxy_string(proxy_str):
@@ -38,6 +39,7 @@ def home():
 
 @app.route('/extract', methods=['GET', 'POST'])
 def extract_url():
+    # সম্পূর্ণ ফাংশনটিকে Try-Except দিয়ে ঘিরে ফেলা হয়েছে যাতে কোনো অবস্থাতেই 500 Server Error না আসে
     try:
         url = None
         custom_proxy = None
@@ -50,11 +52,11 @@ def extract_url():
             url = request.args.get('url')
             custom_proxy = request.args.get('proxy')
 
-        # URL না থাকলে ৪-শ কাস্টম এরর রিটার্ন করবে, ৫০০ সার্ভার এরর দেবে না
+        # যদি URL না দেওয়া হয় তবে সুন্দর একটি JSON এরর মেসেজ দেবে
         if not url:
             return jsonify({
                 "success": False, 
-                "error": "URL parameter is missing! Example: /extract?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                "error": "URL parameter missing. Usage: /extract?url=YOUR_YOUTUBE_URL"
             }), 400
 
         active_proxy = parse_proxy_string(custom_proxy) if custom_proxy else parse_proxy_string(DEFAULT_PROXY)
@@ -64,8 +66,9 @@ def extract_url():
             'no_warnings': True,
             'proxy': active_proxy,
             'noplaylist': True,
-            # অডিও+ভিডিও এক সাথে থাকা কম্বাইন্ড ফরম্যাট
-            'format': '18/22/b[acodec!=none][vcodec!=none]/best[acodec!=none][vcodec!=none]/best',
+            # অডিও এবং ভিডিও দুটোই আছে এমন সিঙ্গেল ফরম্যাট আনবে
+            'format': '18/22/best[acodec!=none][vcodec!=none]/best',
+            'socket_timeout': 15, # প্রক্সি স্লো হলে ১৫ সেকেন্ড পর টাইমআউট হয়ে এরর জানাবে
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             }
@@ -78,10 +81,9 @@ def extract_url():
             
             if not stream_url and 'formats' in info:
                 for f in info['formats']:
-                    if f.get('url'):
+                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                         stream_url = f.get('url')
-                        if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                            break
+                        break
 
             formats_data = []
             if 'formats' in info:
@@ -107,10 +109,11 @@ def extract_url():
             }), 200
 
     except Exception as e:
+        # প্রক্সি ব্লক বা প্রক্সি অফ থাকলে সেই এররটি JSON আকারে রিটার্ন করবে
         return jsonify({
             "success": False,
             "error": str(e)
-        }), 200  # JSON স্ট্রাকচার ঠিক রাখতে ২০ link দিয়ে হ্যান্ডেল করা হয়েছে
+        }), 400
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
