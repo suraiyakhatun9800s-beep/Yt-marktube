@@ -10,8 +10,8 @@ CORS(app)
 # আপনার প্রদত্ত প্রক্সি পুল
 PROXIES_LIST = [
     
-    "https://bwadvamb:y06rok7kerdd@191.96.254.138:6185",
-    "https://bwadvamb:y06rok7kerdd@31.58.9.4:6077"
+    "http://DVSoushlwv:pYFLHug@172.93.103.121:45727"
+    
 ]
 
 def parse_proxy_string(proxy_str):
