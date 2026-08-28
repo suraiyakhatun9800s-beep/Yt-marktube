@@ -1,5 +1,4 @@
-Flask
-flask-cors
+fastapi
+uvicorn
 yt-dlp
-gunicorn
-PySocks
+pydantic
