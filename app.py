@@ -6,7 +6,7 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)
 
-# সাম্প্রতিক কাজের প্রক্সি (ডিফল্ট)
+# আপডেট করা প্রক্সি
 DEFAULT_PROXY = "http://DVSn2on8s5:h9S51gF@104.219.238.238:46671"
 
 def parse_proxy_string(proxy_str):
@@ -34,7 +34,7 @@ def parse_proxy_string(proxy_str):
 def home():
     return jsonify({
         "status": "online",
-        "message": "Ultra-light Stream Extractor API is Running"
+        "message": "Direct Stream Extractor API is Active!"
     }), 200
 
 @app.route('/extract', methods=['GET', 'POST'])
@@ -56,16 +56,17 @@ def extract():
 
         active_proxy = parse_proxy_string(custom_proxy) if custom_proxy else parse_proxy_string(DEFAULT_PROXY)
 
-        # মিনিমাল এবং ফাস্ট অপটিমাইজেশন সেটিংস
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
             'skip_download': True,
-            'socket_timeout': 8,
-            # অডিও+ভিডিও একসাথে মার্জ করা সিঙ্গেল ডিফল্ট ফাইল (Format 18/22)
-            'format': '18/22/b[acodec!=none][vcodec!=none]/best',
+            'socket_timeout': 10,
             'proxy': active_proxy,
+            # ১. প্রথমে অডিও+ভিডিও মার্জ ফরম্যাট (18/22) খুঁজবে
+            # ২. না পেলে যেকোনো অডিও+ভিডিও যুক্ত স্ট্রিম নেবে
+            # ৩. সেটিও না থাকলে বেস্ট এভেলেবল সিঙ্গেল স্ট্রিম আনবে (কোনো এরর দেবে না)
+            'format': '18/22/b[acodec!=none][vcodec!=none]/best[acodec!=none][vcodec!=none]/b/best',
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36',
             }
@@ -74,10 +75,20 @@ def extract():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # সরাসরি প্লে-এবল অরিজিনাল সিঙ্গেল স্ট্রিম লিংক
             stream_url = info.get('url')
 
-            # অতি সংক্ষিপ্ত ও ক্লিন JSON রেসপন্স (CPU/RAM বাঁচানোর জন্য)
+            # যদি কোনো কারণে ডাইরেক্ট লিঙ্ক না মেলে, ব্যাকআপ লুপ থেকে সরাসরিgooglevideo-র লিঙ্ক বের করবে
+            if not stream_url and 'formats' in info:
+                # অডিও এবং ভিডিও দুটোই আছে এমন লিঙ্ক ফিল্টার
+                combined = [f for f in info['formats'] if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none']
+                if combined:
+                    stream_url = combined[0].get('url') # ডিফল্ট কম্বাইন্ড লিঙ্ক
+                else:
+                    # ব্যাকআপ: যেকোনো সচল ভিডিও লিঙ্ক
+                    valid_urls = [f.get('url') for f in info['formats'] if f.get('url')]
+                    if valid_urls:
+                        stream_url = valid_urls[-1]
+
             return jsonify({
                 "success": True,
                 "title": info.get('title'),
