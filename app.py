@@ -2,12 +2,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
 
-app = FastAPI(
-    title="Universal Video Extractor API",
-    description="yt-dlp ব্যবহার করে ভিডিওর ডিরেক্ট স্ট্রিমিং ও প্লেব্যাক লিঙ্ক বের করার API"
-)
+app = FastAPI()
 
-# CORS এনাবল করা হলো যাতে যেকোনো ফ্রন্টএন্ড বা ওয়েবসাইট থেকে কল করা যায়
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,17 +12,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def home():
-    return {"status": "online", "message": "Video Extractor API runs successfully!"}
-
-@app.get("/api/extract")
-def extract_video_info(url: str = Query(..., description="ভিডিওর পুরো URL এখানে দিন")):
+@app.get("/extract")
+def extract_video_info(url: str = Query(..., description="Video URL")):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        # 'b' বা 'best' ফরম্যাট সিলেক্ট করবে যা সাধারণত অডিও ও ভিডিও একসাথে কম্বাইন্ড Direct MP4 Stream প্রদান করে
-        'format': 'b/best',
+        # ইউটিউবের ব্লকিং বাইপাস করতে Android Client ও Player Clients ইমুলেট করা
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+            }
+        },
+        # ডিরেক্ট স্ট্রিম প্লেব্যাকের জন্য ফরম্যাট ফলব্যাক
+        'format': 'best[ext=mp4]/b/best',
         'noplaylist': True,
     }
 
@@ -34,18 +32,17 @@ def extract_video_info(url: str = Query(..., description="ভিডিওর প
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # সরাসরি ড্রাইভ করা ভিডিও বা মিডিয়া স্ট্রিম লিঙ্ক
             direct_media_url = info.get('url')
             
             if not direct_media_url:
-                raise HTTPException(status_code=404, detail="Direct media stream URL not found")
+                raise HTTPException(status_code=404, detail="Direct playback URL not found")
 
             return {
                 "success": True,
                 "title": info.get("title"),
                 "duration": info.get("duration"),
                 "thumbnail": info.get("thumbnail"),
-                "raw_playback_url": direct_media_url, # এটিই আপনার কাঙ্ক্ষিত প্লেব্যাক লিংক
+                "raw_playback_url": direct_media_url,
                 "ext": info.get("ext"),
             }
 
