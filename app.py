@@ -44,7 +44,7 @@ def extract_media_info(url, proxy_url=None):
         'skip_download': True,
         
         # yt-dlp এর অফিসিয়াল স্ট্যান্ডার্ড কম্বাইন্ড অডিও+ভিডিও ফরম্যাট সিলেক্টর
-        'format': '18/22/best[vcodec!=none][acodec!=none]/b/best',
+        'format': "format": "best[protocol=https]/best",
         
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
