@@ -1,50 +1,77 @@
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
+import os
+import time
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import yt_dlp
+import socket
 
-app = FastAPI()
+# দ্রুত রেসপন্স নিশ্চিত করতে ২ সেকেন্ড টাইমআউট
+socket.setdefaulttimeout(2)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = Flask(__name__)
+CORS(app)
 
-@app.get("/extract")
-def extract_video_info(url: str = Query(..., description="Video URL")):
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        # ইউটিউবের ব্লকিং বাইপাস করতে Android Client ও Player Clients ইমুলেট করা
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web'],
-            }
-        },
-        # ডিরেক্ট স্ট্রিম প্লেব্যাকের জন্য ফরম্যাট ফলব্যাক
-        'format': 'best[ext=mp4]/b/best',
-        'noplaylist': True,
+API_KEY = "YT_SECURE_API_V1_2026_PRO"
+
+# yt-dlp কনফিগারেশন
+BASE_OPTS = {
+    "quiet": True,
+    "no_warnings": True,
+    "skip_download": True,
+    "noplaylist": True,
+    "cachedir": False,
+    "format": "best[protocol=https]/best",
+    "socket_timeout": 5,
+    "extractor_args": {
+        "youtube": {
+            "player_client": [
+                "android",
+                "web",
+                "android_tv",
+                "ios"
+            ]
+        }
     }
+}
+
+def extract(url):
+    """সরাসরি ইউটিউব থেকে ইনফো এক্সট্রাক্ট করার ফাংশন"""
+    with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
+        return ydl.extract_info(url, download=False)
+
+@app.route("/")
+def home():
+    return "API is Running!"
+
+@app.route("/get-link")
+def get_link():
+    key = request.args.get("key")
+    url = request.args.get("url")
+
+    if key != API_KEY:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    if not url:
+        return jsonify({"success": False, "error": "Missing URL"}), 400
+
+    start = time.time()
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            direct_media_url = info.get('url')
-            
-            if not direct_media_url:
-                raise HTTPException(status_code=404, detail="Direct playback URL not found")
-
-            return {
-                "success": True,
-                "title": info.get("title"),
-                "duration": info.get("duration"),
-                "thumbnail": info.get("thumbnail"),
-                "raw_playback_url": direct_media_url,
-                "ext": info.get("ext"),
-            }
-
+        info = extract(url)
+        return jsonify({
+            "success": True,
+            "mode": "direct",
+            "playback": info.get("url"),
+            "title": info.get("title"),
+            "duration": info.get("duration"),
+            "took": round(time.time() - start, 2)
+        })
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return jsonify({
+            "success": False,
+            "error": "Extraction failed",
+            "detail": str(e)
+        }), 500
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, threaded=True)
