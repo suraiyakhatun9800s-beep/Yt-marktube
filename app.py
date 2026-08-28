@@ -7,7 +7,7 @@ app = Flask(__name__)
 CORS(app)
 
 # সাম্প্রতিক কাজের প্রক্সি (ডিফল্ট)
-DEFAULT_PROXY = "http://DVSoushlwv:pYFLHug@172.93.103.121:45727"
+DEFAULT_PROXY = "http://DVSn2on8s5:h9S51gF@104.219.238.238:46671"
 
 def parse_proxy_string(proxy_str):
     if not proxy_str:
