@@ -1,6 +1,7 @@
 import os
 import random
 import time
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
@@ -14,15 +15,32 @@ CORS(app)
 
 API_KEY = "YT_SECURE_API_V1_2026_PRO"
 
-# সরাসরি প্রক্সি লিস্ট (এখানে আপনার অরিজিনাল প্রক্সিগুলো বসিয়ে দিন)
-PROXY_POOL = [
-    "socks5://193.25.215.182:22222",
-   # "socks5://45.194.33.12:30001",
-    #"socks5://147.45.66.116:1082"
-]
+# Supabase Credentials (আপনার এডমিন প্যানেলের সাথে মিল রেখে সেট করা)
+SUPABASE_URL = "https://xzwbejlxdjixndvrwvey.supabase.co"
+SUPABASE_KEY = "sb_publishable_UXzBvtY5Javvg5DwaS1l6g_OUC18jr5"
 
 # প্রতি রিকোয়েস্টে সর্বোচ্চ কয়টি প্রক্সি ট্রাই করা হবে
 MAX_RETRIES = 3
+
+def fetch_live_proxies():
+    """Supabase থেকে শুধুমাত্র live স্ট্যাটাসের প্রক্সিগুলো ফেচ করার ফাংশন"""
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}"
+        }
+        # শুধুমাত্র status=live প্রক্সিগুলো ফিল্টার করা হচ্ছে
+        url = f"{SUPABASE_URL}/rest/v1/proxies?status=eq.live&select=ip"
+        response = requests.get(url, headers=headers, timeout=3)
+        
+        if response.status_code == 200:
+            data = response.json()
+            # ip ফিল্ডের মানগুলো বের করে একটি লিস্ট তৈরি করা হচ্ছে
+            return [item['ip'] for item in data if 'ip' in item]
+        return []
+    except Exception as e:
+        print(f"Supabase fetch error: {e}")
+        return []
 
 def get_base_opts(proxy_url=None):
     """yt-dlp কনফিগারেশন অপশন"""
@@ -50,14 +68,16 @@ def get_base_opts(proxy_url=None):
     return opts
 
 def extract_with_fallback(url):
-    """প্রক্সি ফেইল করলে স্বয়ংক্রিয়ভাবে পরবর্তী প্রক্সি ব্যবহারের ফাংশন"""
+    """Supabase থেকে পাওয়া প্রক্সি দিয়ে এক্সট্র্যাক্ট করার চেষ্টা করবে"""
+    proxy_pool = fetch_live_proxies()
+
     # প্রক্সি লিস্ট ফাঁকা থাকলে প্রক্সি ছাড়াই চেষ্টা করবে
-    if not PROXY_POOL:
+    if not proxy_pool:
         with yt_dlp.YoutubeDL(get_base_opts()) as ydl:
             return ydl.extract_info(url, download=False)
 
     # র‍্যান্ডমাইজ করার জন্য লিস্ট কপি
-    available_proxies = list(PROXY_POOL)
+    available_proxies = list(proxy_pool)
     random.shuffle(available_proxies)
 
     attempts = min(MAX_RETRIES, len(available_proxies))
@@ -80,7 +100,7 @@ def extract_with_fallback(url):
 
 @app.route("/")
 def home():
-    return "API is Running!"
+    return "API is Running with Supabase Integration!"
 
 @app.route("/get-link")
 def get_link():
