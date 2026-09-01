@@ -16,8 +16,11 @@ CORS(app)
 
 API_KEY = "YT_SECURE_API_V1_2026_PRO"
 
-# Cloudflare KV URL (এখানে আপনার Cloudflare Worker-এর URL দিন)
-CLOUDFLARE_STORE_URL = "https://youtube-mode-db3e.ss7584150.workers.dev/proxies"
+# -------------------------------------------------------------
+# Supabase এর সেটিংস (আপনার Supabase Credentials দিন)
+# -------------------------------------------------------------
+SUPABASE_URL = "https://xzwbejlxdjixndvrwvey.supabase.co"
+SUPABASE_KEY = "sb_publishable_UXzBvtY5Javvg5DwaS1l6g_OUC18jr5"
 
 # ইন-মেমোরি প্রক্সি পুল ক্যাশে
 PROXY_POOL = []
@@ -26,33 +29,35 @@ PROXY_POOL = []
 MAX_RETRIES = 3
 
 
-def load_proxies_from_cloudflare():
-    """Cloudflare KV থেকে প্রক্সি তালিকা লোড করার ফাংশন"""
+def load_proxies_from_supabase():
+    """Supabase Rest API ব্যবহার করে প্রক্সি লোড করার ফাংশন"""
     global PROXY_POOL
     try:
+        # Supabase 'proxies' টেবিল থেকে শুধু live প্রক্সি আনার রিকোয়েস্ট
+        endpoint = f"{SUPABASE_URL}/rest/v1/proxies?status=eq.live&select=ip"
         req = urllib.request.Request(
-            CLOUDFLARE_STORE_URL, 
-            headers={'User-Agent': 'Mozilla/5.0'}
+            endpoint,
+            headers={
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json"
+            }
         )
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode())
-                # শুধু active/live প্রক্সিগুলো ফিল্টার করা হচ্ছে
-                active_proxies = [
-                    item['ip'] for item in data 
-                    if item.get('status') == 'live' or 'status' not in item
-                ]
-                PROXY_POOL = active_proxies
-                print(f" Successfully loaded {len(PROXY_POOL)} active proxies from Cloudflare KV.")
+                # ইন-মেমোরি প্রক্সি পুল আপডেট (পুরনো ডাটা মুছে যাবে)
+                PROXY_POOL = [item['ip'] for item in data if 'ip' in item]
+                print(f" Successfully loaded {len(PROXY_POOL)} active proxies from Supabase.")
                 return True
     except Exception as e:
-        print(f" Failed to load proxies from Cloudflare: {e}")
+        print(f" Failed to load proxies from Supabase: {e}")
     
     return False
 
 
-# সার্ভার চালু হওয়ার সাথে সাথেই Cloudflare থেকে প্রক্সি লোড হবে
-load_proxies_from_cloudflare()
+# সার্ভার চালু হওয়ার সাথে সাথেই Supabase থেকে প্রক্সি লোড হবে
+load_proxies_from_supabase()
 
 
 def get_base_opts(proxy_url=None):
@@ -83,12 +88,10 @@ def get_base_opts(proxy_url=None):
 
 def extract_with_fallback(url):
     """প্রক্সি ফেইল করলে স্বয়ংক্রিয়ভাবে পরবর্তী প্রক্সি ব্যবহারের ফাংশন"""
-    # প্রক্সি লিস্ট ফাঁকা থাকলে প্রক্সি ছাড়াই চেষ্টা করবে
     if not PROXY_POOL:
         with yt_dlp.YoutubeDL(get_base_opts()) as ydl:
             return ydl.extract_info(url, download=False)
 
-    # র‍্যান্ডমাইজ করার জন্য লিস্ট কপি
     available_proxies = list(PROXY_POOL)
     random.shuffle(available_proxies)
 
@@ -98,16 +101,13 @@ def extract_with_fallback(url):
     for attempt in range(attempts):
         selected_proxy = available_proxies.pop()
         try:
-            # নির্বাচিত প্রক্সি দিয়ে এক্সট্র্যাক্ট করার চেষ্টা
             opts = get_base_opts(selected_proxy)
             with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=False)
         except Exception as e:
             last_error = str(e)
-            # কাজ না করলে পরবর্তী প্রক্সিতে যাবে
             continue
 
-    # সব চেষ্টা ব্যর্থ হলে এক্সেপশন থ্রো করবে
     raise Exception(f"All {attempts} proxy attempts failed. Last error: {last_error}")
 
 
@@ -148,16 +148,16 @@ def get_link():
 
 @app.route("/admin/reload-proxies", methods=["POST"])
 def reload_proxies():
-    """অ্যাডমিন প্যানেল থেকে Webhook সংকেত পাওয়ার পর প্রক্সি মেমোরি রিফ্রেশ করার এন্ডপয়েন্ট"""
+    """অ্যাডমিন প্যানেল থেকে সংকেত পাওয়ার পর ইন-মেমোরি প্রক্সি রিফ্রেশ করার এন্ডপয়েন্ট"""
     key = request.args.get("key")
     if key != API_KEY:
         return jsonify({"success": False, "error": "Unauthorized"}), 401
 
-    success = load_proxies_from_cloudflare()
+    success = load_proxies_from_supabase()
     if success:
         return jsonify({
             "success": True, 
-            "message": "Proxies reloaded successfully", 
+            "message": "Memory updated successfully from Supabase", 
             "total_proxies": len(PROXY_POOL)
         }), 200
     else:
