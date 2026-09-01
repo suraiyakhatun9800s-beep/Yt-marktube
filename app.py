@@ -17,7 +17,7 @@ CORS(app)
 API_KEY = "YT_SECURE_API_V1_2026_PRO"
 
 # Cloudflare KV URL (এখানে আপনার Cloudflare Worker-এর URL দিন)
-CLOUDFLARE_STORE_URL = "https://your-worker-name.your-subdomain.workers.dev/proxies"
+CLOUDFLARE_STORE_URL = "https://youtube-mode-db3e.ss7584150.workers.dev/proxies"
 
 # ইন-মেমোরি প্রক্সি পুল ক্যাশে
 PROXY_POOL = []
